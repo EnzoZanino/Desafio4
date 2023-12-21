@@ -1,23 +1,34 @@
 import { Router } from "express";
-import { ProductManager } from '../productManager.js';
-import { socketServer } from "../app.js";
+import ProductManager from "../dao/fs/productManager.js";
 
-const prodManager = new ProductManager("./Productos.json");
+const manager = new ProductManager('./src/db/products.json')
+const productsViewsRouter = Router();
 
-const router = Router()
-
-router.get('/', (req, res) => {
-    const products = prodManager.getProducts();
-    res.render('home', { products })
+productsViewsRouter.get('/', async (req, res) => {
+    try {
+        const products = await manager.getProducts();
+        const {limit} = req.query;
+        if (limit) {
+            const someProducts = products.slice(0, Number(limit));
+            res.render('home', {products: someProducts});
+        } 
+        else res.render('home', {products});
+    } catch(e) {
+        res.status(502).send({error: true, msg: e.message})
+    }
 })
 
-router.get('/realtimeproducts', (req, res) => {
-    const products = prodManager.getProducts();
-    res.render('realTimeProducts', {
-        title: "realTimeProducts",
-        products
-    })
-    socketServer.emit('realTimeProducts', { products });
-});
+productsViewsRouter.get('/realtimeproducts', async (req, res) => {
+    try {
+        res.render('realTimeProducts')
+        const io = req.io;
+        const products = await manager.getProducts()
+        io.on('connection', ()=> {
+            io.emit('actualizacion', products)
+        })
+    } catch(e) {
+        res.status(502).send({error: true, msg: e.message})
+    }
+})
 
-export default router
+export default productsViewsRouter

@@ -1,85 +1,87 @@
 import { Router } from "express";
-import { socketServer } from '../app.js';
+import ProductManager from "../dao/fs/productManager.js";
 
-const productsRouter = (prodManager) => {
-    const router = Router();
+const manager = new ProductManager("./src/db/products.json");
 
-    router.get('/', (req, res) => {
-        try {
-            const products = prodManager.getProducts();
-            const limit = req.query.limit;
+const productsRouter = Router();
 
-            if (limit) {
-                res.json({ products: products.slice(0, limit) });
-            } else {
-                res.json({ products });
-            }
-        } catch (error) {
-            res.status(500).json({ error: 'Error interno del servidor' });
-        }
-    });
+productsRouter.get("/", async (req, res) => {
+    try {
+        const products = await manager.getProducts();
+        const { limit } = req.query;
+        if (limit) {
+            const someProducts = products.slice(0, Number(limit));
+            res.send(someProducts);
+        } else res.send(products);
+    } catch (e) {
+        res.status(502).send({
+            error: true,
+            msg: e.message,
+        });
+    }
+});
 
-    router.get('/:pid', (req, res) => {
-        try {
-            const productId = parseInt(req.params.pid);
-            const product = prodManager.getProductByID(productId);
+productsRouter.get("/:pid", async (req, res) => {
+    try {
+        const products = await manager.getProducts();
+        const { pid } = req.params;
+        const product = products.find((prod) => prod.id === Number(pid));
+        res.send(product ? product : "Product not found");
+    } catch (e) {
+        res.status(502).send({
+            error: true,
+            msg: e.message,
+        });
+    }
+});
 
-            if (product) {
-                res.json({ product });
-            } else {
-                res.status(404).json({ error: 'Producto no encontrado' });
-            }
-        } catch (error) {
-            res.status(500).json({ error: 'Error interno del servidor' });
-        }
-    });
+productsRouter.post("/", async (req, res) => {
+    try {
+        const info = req.body;
+        const response = await manager.addProduct(info);
+        const io = req.io;
+        const updatedList = await manager.getProducts();
+        io.emit('actualizacion', updatedList)
+        res.send(response);
+    } catch (e) {
+        res.status(502).send({
+            error: true,
+            msg: e.message,
+        });
+    }
+});
 
-    router.post('/', (req, res) => {
-        try {
-            const { title, description, code, price, stock, category, thumbnail } = req.body;
+productsRouter.put("/:pid", async (req, res) => {
+    try {
+        const { pid } = req.params;
+        const info = req.body;
+        const response = await manager.updateProduct(Number(pid), info);
+        const io = req.io;
+        const updatedList = await manager.getProducts();
+        io.emit('actualizacion', updatedList)
+        res.send(response);
+    } catch (e) {
+        res.status(502).send({
+            error: true,
+            msg: e.message,
+        });
+    }
+});
 
-            if (!title || !description || !code || !price || !stock || !category) {
-                return res.status(400).json({ error: 'Todos los campos son obligatorios, excepto thumbnails' });
-            }
-
-            const newProduct = {
-                id: "",
-                title,
-                description,
-                code,
-                price,
-                status: true,
-                stock,
-                category,
-                thumbnail: thumbnail || [],
-            };
-
-            prodManager.addProduct(newProduct);
-
-            socketServer.emit('productAdded', { newProduct });
-
-            res.status(201).json({ product: newProduct });
-        } catch (error) {
-            console.error(error);
-            res.status(500).json({ error: 'Error interno del servidor' });
-        }
-    });
-
-    router.delete('/:pid', (req, res) => {
-        try {
-            const productId = parseInt(req.params.pid);
-
-            prodManager.deleteProduct(productId);
-
-            socketServer.emit('productDeleted', { productId });
-            res.json({ message: 'Producto eliminado exitosamente' });
-        } catch (error) {
-            console.error(error);
-            res.status(500).json({ error: 'Error interno del servidor' });
-        }
-    });
-
-    return router;
-};
+productsRouter.delete("/:pid", async (req, res) => {
+    try {
+        const { pid } = req.params;
+        const product = await manager.deleteProduct(Number(pid));
+        const io = req.io;
+        const updatedList = await manager.getProducts();
+        io.emit('actualizacion', updatedList)
+        res.send(product);
+    } catch (e) {
+        res.status(502).send({
+            error: true,
+            msg: e.message,
+        });
+    }
+});
 
 export default productsRouter;
